@@ -1,3 +1,7 @@
+## Injected JS
+
+This URL is hardcoded in `/routes/index.js`
+
 ## Docker deployment
 
 ### Add the Sagoku remotes for understanding-proxy:
