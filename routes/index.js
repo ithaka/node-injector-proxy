@@ -25,7 +25,10 @@ router.route('*')
 })
 
 function injectScriptTag(body){
-  return body.replace('</html>', '<script src=""></script></html>')
+  return body.replace(
+    '</html>',
+    '<script src="https://s3.amazonaws.com/ithaka-labs/ugw-assets/ugw-test-latest.js"></script></html>'
+  )
 }
 
 module.exports = router;
