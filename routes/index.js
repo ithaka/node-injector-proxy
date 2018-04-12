@@ -17,12 +17,22 @@ router.route('*')
       proxyTargetHost = extractProxyTargetHostFromRequest(uri)
     }
 
+
+    let options = {uri};
+    if (uri.includes("png")){
+      options['encoding'] = null;
+    }
     // request.body exists courtesy of bodyParser middleware
-    request({ uri }, (err, response, data) => {
+    request(options, (err, response, data) => {
       if (err) {
         throw Error(err)
       }
-      res.send(injectScriptTag(response.body))
+      if (uri.includes('png')){
+        res.write(new Buffer(data),'binary');
+        res.end(undefined,'binary');
+      } else {
+        res.send(injectScriptTag(response.body, uri))
+      }
     })
   })
 
@@ -32,13 +42,22 @@ function hasNoProtocol(uri){
 }
 
 function extractProxyTargetHostFromRequest(uri) {
-  return uri.startsWith('https://')
-    ? `https://${uri.split('https://')[1].split('/')[0]}`
-    : `http://${uri.split('http://')[1].split('/')[0]}`
+  if (uri.startsWith('https://')){
+    return `https://${uri.split('https://')[1].split('/')[0]}`
+  } else {
+    let targetDomain = uri.split('http://')[1];
+    let domainElements = targetDomain.split('/');
+    domainElements.pop();
+    return `http://${domainElements.join('/')}`
+  }
 }
 
-function injectScriptTag(body) {
-  return body.replace(
+function injectScriptTag(body, uri) {
+  if (uri.includes('folger')){
+    body = body.replace('<head>', '<link href="http://www.folgerdigitaltexts.org/html/fdt.css" rel="stylesheet"/>')
+  }
+  return body
+    .replace(
     '</html>',
     `<script src="${INJECTED_JAVASCRIPT_URL}"></script></html>`
   )
