@@ -13,7 +13,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /dev/null:/traefik.toml
   proxy:
-    image: docker-registry.acorn.cirrostratus.org/playground/node-injector-proxy:92e0470b50fc
+    image: docker-registry.acorn.cirrostratus.org/playground/node-injector-proxy:87e851c2f876
     restart: always
     labels:
       traefik.port: "3000"
