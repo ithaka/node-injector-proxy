@@ -11,32 +11,27 @@ const PRESERVE_HEADERS = {
   'content-length': 'Content-Length'
 }
 
-const cachedRouteMap = {}
-
-
 let proxyTargetHost = ''
+let proxyTargetPath = ''
 
 router.route('*')
   .get((req, res) => {
-    let uri = req.originalUrl.substring(1)
-    let relativeURLRequested = ''
-    if (hasNoProtocol(uri)) {
-      console.log('relative URL requested', uri)
-      relativeURLRequested = uri
-      // relative URL from previous host.  Prepend proxyTargetHost to URL.
-      uri = `${proxyTargetHost}/${uri}`
-      console.log('resetting URI', uri)
-    } else {
+    let uri = req.originalUrl;
+    if (uri.startsWith('/http')){
+      uri = uri.substring(1)
       // new host or URL with protocol
-      proxyTargetHost = extractProxyTargetHostFromRequest(uri)
+      extractProxyHostAndPath(uri)
       console.log('setting proxyTargetHost', proxyTargetHost)
     }
-
-
-    if (cachedRouteMap[uri]) {
-      console.log('using cached route', cachedRouteMap[uri])
+    if (hasNoProtocol(uri)) {
+      console.log('relative URL requested', uri)
+      if (uri.startsWith('/')){
+        uri = `${proxyTargetHost}${uri}`
+      } else {
+        uri = `${proxyTargetHost}/${proxyTargetPath}/${uri}`
+      }
+      console.log('resetting URI', uri)
     }
-    uri = cachedRouteMap[uri] || uri
 
     let options = { uri, encoding: nullEncodeForImages(uri) }
 
@@ -48,33 +43,9 @@ router.route('*')
       if (originResponse.statusCode === 200) {
         console.log(`200 for ${uri}, forwarding to client`)
         sendResponse(contentType, res, originResponse)
-        return
+      } else {
+        res.send('')
       }
-      // route is cached, but we didn't get a 200.  Send an empty response
-      if (cachedRouteMap[uri]) {
-        console.log('cachedRoute returned ', originResponse.statusCode)
-        return res.send('')
-      }
-      // not cached, let's try to request resource from base domain
-      const originalUri = uri
-      const urlObject = url.parse(uri)
-
-      // if we're not already at the root, and we are trying to get a relative URL,
-      if (urlObject.pathname !== '/' && relativeURLRequested) {
-        // try fetching resource from hostname without intermediate path elements
-        uri = `${urlObject.protocol}//${urlObject.hostname}/${relativeURLRequested}`
-        request({ ...options, uri }, (err, retryResponse) => {
-          if (err) throw Error(err)
-
-          contentType = retryResponse.headers['content-type']
-          if (retryResponse.statusCode === 200) {
-            // if successful request, cache the modified URL
-            cachedRouteMap[originalUri] = uri
-            return sendResponse(contentType, res, retryResponse)
-          }
-        })
-      }
-      return res.send('')
     })
   })
 
@@ -101,26 +72,10 @@ function hasNoProtocol(uri) {
   return !uri.startsWith('http')
 }
 
-function extractProxyTargetHostFromRequest(uri) {
-  if (uri.startsWith('https://')) {
-    let targetURL = uri.split('https://')[1]
-    console.log('targetURL', targetURL)
-    let pathElements = targetURL.split('/')
-    console.log('pathElements', pathElements)
-    if (pathElements.length > 1) {
-      pathElements.pop()
-    }
-    return `https://${domainElements.join('/')}`
-  } else {
-    let targetURL = uri.split('http://')[1]
-    console.log('targetURL', targetURL)
-    let pathElements = targetURL.split('/')
-    console.log('pathElements', pathElements)
-    if (pathElements.length > 1) {
-      pathElements.pop()
-    }
-    return `http://${pathElements.join('/')}`
-  }
+function extractProxyHostAndPath(uri) {
+  let URLObject = url.parse(uri)
+  proxyTargetHost = `${URLObject.protocol}//${URLObject.hostname}`
+  proxyTargetPath = `${URLObject.pathname}`
 }
 
 function injectScriptTag(body) {
