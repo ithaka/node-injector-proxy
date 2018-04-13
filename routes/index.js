@@ -43,10 +43,13 @@ router.route('*')
       let contentType = preserveHeaders(originResponse, res)
 
       if (originResponse.statusCode === 200) {
-        return sendResponse(contentType, res, originResponse)
+        console.log(`200 for ${uri}, forwarding to client`)
+        sendResponse(contentType, res, originResponse)
+        return;
       }
       // route is cached, but we didn't get a 200.  Send an empty response
       if (cachedRouteMap[uri]) {
+        console.log('cachedRoute returned ', originResponse.statusCode)
         return res.send('')
       }
       // not cached, let's try to request resource from base domain
@@ -64,7 +67,7 @@ router.route('*')
           if (retryResponse.statusCode === 200) {
             // if successful request, cache the modified URL
             cachedRouteMap[originalUri] = uri
-            return sendResponse(contentType, res, retryResponse)
+            sendResponse(contentType, res, retryResponse)
           }
         })
       } else {
@@ -113,13 +116,23 @@ function extractProxyTargetHostFromRequest(uri) {
 function injectScriptTag(body) {
   if (typeof body !== 'string') {
     body = body.toString()
-    console.log(body)
   }
-  return body
-    .replace(
-      '</head>',
-      `<script async src="${INJECTED_JAVASCRIPT_URL}"></script></head>`
-    )
+  if (body.includes("</head>")){
+    return body
+      .replace(
+        '</head>',
+        `<script async src="${INJECTED_JAVASCRIPT_URL}"></script></head>`
+      )
+  } else if (body.includes("</html>")){
+    return body
+      .replace(
+        '</html>',
+        `<script async src="${INJECTED_JAVASCRIPT_URL}"></script></html>`
+      )
+  }
+
+  console.log('No </head> or </html> tag found.  Returning body without JS injected')
+  return body;
 }
 
 module.exports = router
