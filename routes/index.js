@@ -21,12 +21,15 @@ router.route('*')
     let uri = req.originalUrl.substring(1)
     let relativeURLRequested = ''
     if (hasNoProtocol(uri)) {
+      console.log('relative URL requested', uri)
       relativeURLRequested = uri
       // relative URL from previous host.  Prepend proxyTargetHost to URL.
       uri = `${proxyTargetHost}/${uri}`
+      console.log('resetting URI', uri)
     } else {
       // new host or URL with protocol
       proxyTargetHost = extractProxyTargetHostFromRequest(uri)
+      console.log('setting proxyTargetHost', proxyTargetHost)
     }
 
 
@@ -45,7 +48,7 @@ router.route('*')
       if (originResponse.statusCode === 200) {
         console.log(`200 for ${uri}, forwarding to client`)
         sendResponse(contentType, res, originResponse)
-        return;
+        return
       }
       // route is cached, but we didn't get a 200.  Send an empty response
       if (cachedRouteMap[uri]) {
@@ -60,19 +63,18 @@ router.route('*')
       if (urlObject.pathname !== '/' && relativeURLRequested) {
         // try fetching resource from hostname without intermediate path elements
         uri = `${urlObject.protocol}//${urlObject.hostname}/${relativeURLRequested}`
-        request({...options, uri}, (err, retryResponse) => {
+        request({ ...options, uri }, (err, retryResponse) => {
           if (err) throw Error(err)
 
           contentType = retryResponse.headers['content-type']
           if (retryResponse.statusCode === 200) {
             // if successful request, cache the modified URL
             cachedRouteMap[originalUri] = uri
-            sendResponse(contentType, res, retryResponse)
+            return sendResponse(contentType, res, retryResponse)
           }
         })
-      } else {
-        return res.send('')
       }
+      return res.send('')
     })
   })
 
@@ -101,15 +103,23 @@ function hasNoProtocol(uri) {
 
 function extractProxyTargetHostFromRequest(uri) {
   if (uri.startsWith('https://')) {
-    let targetDomain = uri.split('https://')[1]
-    let domainElements = targetDomain.split('/')
-    domainElements.pop()
+    let targetURL = uri.split('https://')[1]
+    console.log('targetURL', targetURL)
+    let pathElements = targetURL.split('/')
+    console.log('pathElements', pathElements)
+    if (pathElements.length > 1) {
+      pathElements.pop()
+    }
     return `https://${domainElements.join('/')}`
   } else {
-    let targetDomain = uri.split('http://')[1]
-    let domainElements = targetDomain.split('/')
-    domainElements.pop()
-    return `http://${domainElements.join('/')}`
+    let targetURL = uri.split('http://')[1]
+    console.log('targetURL', targetURL)
+    let pathElements = targetURL.split('/')
+    console.log('pathElements', pathElements)
+    if (pathElements.length > 1) {
+      pathElements.pop()
+    }
+    return `http://${pathElements.join('/')}`
   }
 }
 
@@ -117,13 +127,13 @@ function injectScriptTag(body) {
   if (typeof body !== 'string') {
     body = body.toString()
   }
-  if (body.includes("</head>")){
+  if (body.includes('</head>')) {
     return body
       .replace(
         '</head>',
         `<script async src="${INJECTED_JAVASCRIPT_URL}"></script></head>`
       )
-  } else if (body.includes("</html>")){
+  } else if (body.includes('</html>')) {
     return body
       .replace(
         '</html>',
@@ -132,7 +142,7 @@ function injectScriptTag(body) {
   }
 
   console.log('No </head> or </html> tag found.  Returning body without JS injected')
-  return body;
+  return body
 }
 
 module.exports = router
