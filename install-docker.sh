@@ -23,4 +23,5 @@ cat /etc/profile.d/sagoku.sh
 source /etc/profile.d/sagoku.sh
 cd /src || ( echo "/src does not exist, exiting" && exit 1)
 
+docker-compose build
 DOCKER_HOST_IP=$(hostname -i) docker-compose up | bittybuffer -t ${SGK_APP} -c "docker"

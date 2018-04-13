@@ -11,12 +11,17 @@ const PRESERVE_HEADERS = {
   'content-length': 'Content-Length'
 }
 
+const cachedRouteMap = {}
+
+
 let proxyTargetHost = ''
 
 router.route('*')
   .get((req, res) => {
     let uri = req.originalUrl.substring(1)
+    let elementWithNoProtocol = ''
     if (hasNoProtocol(uri)) {
+      elementWithNoProtocol = uri
       // relative URL from previous host.  Prepend proxyTargetHost to URL.
       uri = `${proxyTargetHost}/${uri}`
     } else {
@@ -25,36 +30,74 @@ router.route('*')
     }
 
 
-    let options = { uri,  encoding: nullEncodeForImages(uri) }
+    let options = { uri, encoding: nullEncodeForImages(uri) }
 
-    request(options, (err, originResponse, data) => {
+    uri = cachedRouteMap[uri] || uri
+
+    request(options, (err, originResponse) => {
       if (err) {
         throw Error(err)
       }
 
-      const contentType = preserveHeaders(originResponse, res);
+      let contentType = preserveHeaders(originResponse, res)
 
-      if (originResponse.statusCode !== 200){
-        res.send("");
-        return;
-      }
+      if (originResponse.statusCode !== 200) {
+        if (!cachedRouteMap[uri]) {
+          // not cached, let's try to walk up the path until we find it
+          let originalUri = uri
+          let urlObject = url.parse(originalUri)
 
-      if (contentType.includes('text/html')) {
-        res.send(injectScriptTag(originResponse.body))
-      } else if (contentType.includes('image')) {
-        res.write(new Buffer(data), 'binary')
-        res.end(undefined, 'binary')
+          // if we're not already at the root, and we are trying to get a relative URL,
+          if (urlObject.pathname !== '/' && elementWithNoProtocol) {
+            // try fetching resource from hostname without intermediate path elements
+            uri = `${urlObject.protocol}//${urlObject.hostname}/${elementWithNoProtocol}`
+            options.uri = uri
+            request(options, (err, retryResponse) => {
+              if (err) throw Error(err)
+
+              contentType = retryResponse.headers['content-type']
+              if (retryResponse.statusCode === 200) {
+                // if successful request, cache the modified URL
+                cachedRouteMap[originalUri] = uri
+                sendResponse(contentType, res, retryResponse)
+                return;
+              } else {
+                // dead end
+                res.send('')
+                return
+              }
+            })
+          } else {
+            // dead end
+            res.send('')
+            return
+          }
+        } else {
+          // dead end
+          res.send('')
+          return
+        }
+
       } else {
-        res.send(originResponse.body)
+        sendResponse(contentType, res, originResponse)
       }
     })
   })
 
-function nullEncodeForImages(uri){
-  return (uri.includes('png') || uri.includes('gif') || uri.includes('jpg')) ? null : undefined;
+
+function sendResponse(contentType, res, originResponse) {
+  if (contentType.includes('text/html')) {
+    res.send(injectScriptTag(originResponse.body))
+  } else {
+    res.send(originResponse.body)
+  }
 }
 
-function preserveHeaders(origin, proxyResponse){
+function nullEncodeForImages(uri) {
+  return (uri.includes('png') || uri.includes('gif') || uri.includes('jpg')) ? null : undefined
+}
+
+function preserveHeaders(origin, proxyResponse) {
   Object.keys(PRESERVE_HEADERS)
     .forEach(headerName => proxyResponse.set(PRESERVE_HEADERS[headerName], origin.headers[headerName]))
   return origin.headers['content-type']
@@ -79,7 +122,7 @@ function extractProxyTargetHostFromRequest(uri) {
 }
 
 function injectScriptTag(body) {
-  if (typeof body !== 'string'){
+  if (typeof body !== 'string') {
     body = body.toString()
     console.log(body)
   }
