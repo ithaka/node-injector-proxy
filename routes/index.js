@@ -4,6 +4,13 @@ const url = require('url')
 
 const INJECTED_JAVASCRIPT_URL = 'https://s3.amazonaws.com/ithaka-labs/ugw-assets/ugw-test-latest.js'
 
+const PRESERVE_HEADERS = {
+  'accept-ranges': 'Accept-Ranges',
+  'content-type': 'Content-Type',
+  'content-encoding': 'Content-Encoding',
+  'content-length': 'Content-Length'
+}
+
 let proxyTargetHost = ''
 
 router.route('*')
@@ -18,49 +25,69 @@ router.route('*')
     }
 
 
-    let options = {uri};
-    if (uri.includes("png")){
-      options['encoding'] = null;
-    }
-    // request.body exists courtesy of bodyParser middleware
-    request(options, (err, response, data) => {
+    let options = { uri,  encoding: nullEncodeForImages(uri) }
+
+    request(options, (err, originResponse, data) => {
       if (err) {
         throw Error(err)
       }
-      if (uri.includes('png')){
-        res.write(new Buffer(data),'binary');
-        res.end(undefined,'binary');
+
+      const contentType = preserveHeaders(originResponse, res);
+
+      if (originResponse.statusCode !== 200){
+        res.send("");
+        return;
+      }
+
+      if (contentType.includes('text/html')) {
+        res.send(injectScriptTag(originResponse.body))
+      } else if (contentType.includes('image')) {
+        res.write(new Buffer(data), 'binary')
+        res.end(undefined, 'binary')
       } else {
-        res.send(injectScriptTag(response.body, uri))
+        res.send(originResponse.body)
       }
     })
   })
 
+function nullEncodeForImages(uri){
+  return (uri.includes('png') || uri.includes('gif') || uri.includes('jpg')) ? null : undefined;
+}
 
-function hasNoProtocol(uri){
+function preserveHeaders(origin, proxyResponse){
+  Object.keys(PRESERVE_HEADERS)
+    .forEach(headerName => proxyResponse.set(PRESERVE_HEADERS[headerName], origin.headers[headerName]))
+  return origin.headers['content-type']
+}
+
+function hasNoProtocol(uri) {
   return !uri.startsWith('http')
 }
 
 function extractProxyTargetHostFromRequest(uri) {
-  if (uri.startsWith('https://')){
-    return `https://${uri.split('https://')[1].split('/')[0]}`
+  if (uri.startsWith('https://')) {
+    let targetDomain = uri.split('https://')[1]
+    let domainElements = targetDomain.split('/')
+    domainElements.pop()
+    return `https://${domainElements.join('/')}`
   } else {
-    let targetDomain = uri.split('http://')[1];
-    let domainElements = targetDomain.split('/');
-    domainElements.pop();
+    let targetDomain = uri.split('http://')[1]
+    let domainElements = targetDomain.split('/')
+    domainElements.pop()
     return `http://${domainElements.join('/')}`
   }
 }
 
-function injectScriptTag(body, uri) {
-  if (uri.includes('folger')){
-    body = body.replace('<head>', '<link href="http://www.folgerdigitaltexts.org/html/fdt.css" rel="stylesheet"/>')
+function injectScriptTag(body) {
+  if (typeof body !== 'string'){
+    body = body.toString()
+    console.log(body)
   }
   return body
     .replace(
-    '</html>',
-    `<script src="${INJECTED_JAVASCRIPT_URL}"></script></html>`
-  )
+      '</head>',
+      `<script async src="${INJECTED_JAVASCRIPT_URL}"></script></head>`
+    )
 }
 
 module.exports = router
