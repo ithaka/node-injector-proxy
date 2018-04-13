@@ -19,9 +19,9 @@ let proxyTargetHost = ''
 router.route('*')
   .get((req, res) => {
     let uri = req.originalUrl.substring(1)
-    let elementWithNoProtocol = ''
+    let relativeURLRequested = ''
     if (hasNoProtocol(uri)) {
-      elementWithNoProtocol = uri
+      relativeURLRequested = uri
       // relative URL from previous host.  Prepend proxyTargetHost to URL.
       uri = `${proxyTargetHost}/${uri}`
     } else {
@@ -30,59 +30,45 @@ router.route('*')
     }
 
 
-    let options = { uri, encoding: nullEncodeForImages(uri) }
-
-    if (cachedRouteMap[uri]){
+    if (cachedRouteMap[uri]) {
       console.log('using cached route', cachedRouteMap[uri])
     }
     uri = cachedRouteMap[uri] || uri
 
+    let options = { uri, encoding: nullEncodeForImages(uri) }
+
     request(options, (err, originResponse) => {
-      if (err) {
-        throw Error(err)
-      }
+      if (err) throw Error(err)
 
       let contentType = preserveHeaders(originResponse, res)
 
-      if (originResponse.statusCode !== 200) {
-        if (!cachedRouteMap[uri]) {
-          // not cached, let's try to walk up the path until we find it
-          let originalUri = uri
-          let urlObject = url.parse(originalUri)
+      if (originResponse.statusCode === 200) {
+        return sendResponse(contentType, res, originResponse)
+      }
+      // route is cached, but we didn't get a 200.  Send an empty response
+      if (cachedRouteMap[uri]) {
+        return res.send('')
+      }
+      // not cached, let's try to request resource from base domain
+      const originalUri = uri
+      const urlObject = url.parse(uri)
 
-          // if we're not already at the root, and we are trying to get a relative URL,
-          if (urlObject.pathname !== '/' && elementWithNoProtocol) {
-            // try fetching resource from hostname without intermediate path elements
-            uri = `${urlObject.protocol}//${urlObject.hostname}/${elementWithNoProtocol}`
-            options.uri = uri
-            request(options, (err, retryResponse) => {
-              if (err) throw Error(err)
+      // if we're not already at the root, and we are trying to get a relative URL,
+      if (urlObject.pathname !== '/' && relativeURLRequested) {
+        // try fetching resource from hostname without intermediate path elements
+        uri = `${urlObject.protocol}//${urlObject.hostname}/${relativeURLRequested}`
+        request({...options, uri}, (err, retryResponse) => {
+          if (err) throw Error(err)
 
-              contentType = retryResponse.headers['content-type']
-              if (retryResponse.statusCode === 200) {
-                // if successful request, cache the modified URL
-                cachedRouteMap[originalUri] = uri
-                sendResponse(contentType, res, retryResponse)
-                return;
-              } else {
-                // dead end
-                res.send('')
-                return
-              }
-            })
-          } else {
-            // dead end
-            res.send('')
-            return
+          contentType = retryResponse.headers['content-type']
+          if (retryResponse.statusCode === 200) {
+            // if successful request, cache the modified URL
+            cachedRouteMap[originalUri] = uri
+            return sendResponse(contentType, res, retryResponse)
           }
-        } else {
-          // dead end
-          res.send('')
-          return
-        }
-
+        })
       } else {
-        sendResponse(contentType, res, originResponse)
+        return res.send('')
       }
     })
   })
