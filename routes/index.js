@@ -32,6 +32,9 @@ router.route('*')
 
     let options = { uri, encoding: nullEncodeForImages(uri) }
 
+    if (cachedRouteMap[uri]){
+      console.log('using cached route', cachedRouteMap[uri])
+    }
     uri = cachedRouteMap[uri] || uri
 
     request(options, (err, originResponse) => {
