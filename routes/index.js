@@ -40,7 +40,7 @@ router.route('*')
           res.send('')
         }
       })
-      .catch(e => err(e))
+      .catch(e => {throw Error(e)})
   })
 
 
